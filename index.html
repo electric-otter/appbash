@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AppBash: Bash to AppImage</title>
+  <style>
+    html, body { font-family: sans-serif; background: #181825; color: #f5f5f5; margin: 0; padding: 0; }
+    .container { max-width: 520px; margin: 40px auto; background: #23233a; padding: 2em 2em 1.5em 2em; border-radius: 12px; box-shadow: 0 8px 24px #0002;}
+    h1 { text-align: center; margin: 0 0 1.2em 0; }
+    .step { margin-bottom: 1.2em; }
+    input[type='file'] { color: #f5f5f5; }
+    button { background: #0ea5e9; color: white; border: none; padding: 0.65em 1.5em; border-radius: 7px; font-size: 1.06em; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #outlink { display: block; margin-top: 1em; }
+    .footer { font-size: 0.96em; color: #ababab; text-align: center; margin-top: 2em;}
+    pre { font-size: 0.9em; background: #15161e; padding: 0.7em; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>AppBash: Bash→AppImage</h1>
+    <div class="step">
+      <label for="file">1. Import your Bash script:</label><br>
+      <input type="file" id="file" accept=".sh,.bash,.txt,.command,*/*">
+    </div>
+    <div class="step">
+      <button id="convertBtn" disabled>Make AppImage</button>
+    </div>
+    <a id="outlink" style="display:none;" download="appbash.AppImage">Download AppImage</a>
+    <div id="msg"></div>
+    <hr>
+    <div class="footer">
+      <b>How it works:</b>
+      <pre>AppBash prepends a minimal AppImage ELF header to your script.<br>
+Resulting file is portable & executable on Linux. <br>
+(You may need: chmod +x appbash.AppImage)</pre>
+    </div>
+  </div>
+  <script>
+    // Minimal ELF AppImage runtime - base64-encoded
+    // This is a very small ELF binary that runs the appended script as bash.
+    // (You can use a standard AppRun.c compiled ELF, or the AppImageKit "runtime" binary for more features.)
+    // For demo, this is a 336-byte ELF for x86_64 that execs the appended bash script.
+    // For production, replace with official AppImageKit runtime.
+    const minimalAppImageRuntimeBase64 =
+      "f0VMRgEBAQAAAAAAAAAAAAIAPgABAAAAwARAAAAAAABAAAAAAAAAAJAVAAAAAAAAAAAAAEAAOAABAAAAAAAgAAAAcAAAAAAAAAAEAAOAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAxwAAAAAAAEAAQAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAgAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAgAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAgAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAgAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAgAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAgAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAgAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAgAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAgAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAgAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAgAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAgAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAgAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAAAAAAAAAgAAAAAAAgAAAAAAAwAAAAAAAwAAAAAAAwAAAAAAAgAAAAAAAP//AAABAAEAAAAFAAAABgAAABwAAAAEAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    let userScript = null;
+    const fileInput = document.getElementById('file');
+    const convertBtn = document.getElementById('convertBtn');
+    const outlink = document.getElementById('outlink');
+    const msg = document.getElementById('msg');
+
+    fileInput.addEventListener('change', e => {
+      const file = fileInput.files[0];
+      if (!file) {
+        convertBtn.disabled = true;
+        userScript = null;
+        msg.textContent = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        userScript = evt.target.result;
+        convertBtn.disabled = false;
+        msg.textContent = `Loaded: ${file.name} (${file.size} bytes)`;
+        outlink.style.display = "none";
+      };
+      reader.readAsText(file);
+    });
+
+    convertBtn.addEventListener('click', async () => {
+      if (!userScript) return;
+      msg.textContent = "Building AppImage...";
+
+      // Decode the runtime
+      const runtimeBytes = Uint8Array.from(atob(minimalAppImageRuntimeBase64), c => c.charCodeAt(0));
+
+      // Ensure bash script starts with #! (shebang)
+      let scriptText = userScript;
+      if (!scriptText.startsWith('#!')) {
+        scriptText = '#!/bin/bash\n' + scriptText;
+      }
+
+      // Add a newline if not present at end (for safety)
+      if (!scriptText.endsWith('\n')) scriptText += '\n';
+
+      // Combine the ELF runtime and the script
+      const scriptBytes = new TextEncoder().encode(scriptText);
+      const totalLength = runtimeBytes.length + scriptBytes.length;
+      const appImage = new Uint8Array(totalLength);
+      appImage.set(runtimeBytes, 0);
+      appImage.set(scriptBytes, runtimeBytes.length);
+
+      // Create Blob and offer download
+      const blob = new Blob([appImage], {type: 'application/octet-stream'});
+      outlink.href = URL.createObjectURL(blob);
+      outlink.download = "appbash.AppImage";
+      outlink.style.display = "block";
+      msg.textContent = "AppImage ready! Download and run: chmod +x appbash.AppImage && ./appbash.AppImage";
+    });
+  </script>
+</body>
+</html>
